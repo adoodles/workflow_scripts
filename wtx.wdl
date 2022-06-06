@@ -792,7 +792,7 @@ task Regroup {
     mkdir -p ${databases}
     humann_databases --download utility_mapping full ${databases} --database-location ${versionSpecificUtilityMapping}
 
-    humann_regroup_table --input ${GeneFamiliesFile} --output ${OutFileName} --groups ${groupName} ${customMapping}
+    humann_regroup_table --input ${GeneFamiliesFile} --output ${OutFileName} ${customMapping}
   }
     
   output {
