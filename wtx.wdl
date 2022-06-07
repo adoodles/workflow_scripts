@@ -28,7 +28,9 @@ workflow workflowMTX {
     String? dataType
     File? inputMetadataFile
     File? customUtilityMappingEC
+    String? customMappingECPath
     File? customUtilityMappingKO
+    String? customMappingKOPath
     Int? preemptibleAttemptsOverride
     Int? MaxMemGB_QualityControlTasks
     Int? MaxMemGB_TaxonomicProfileTasks
@@ -158,7 +160,8 @@ workflow workflowMTX {
         OutFileName=PairPaths[sample_index][2]+"_ecs.tsv",
         humannDockerImage=humannDockerImage,
         groupName="uniref90_level4ec",
-        customUtilityMapping=customUtilityMappingEC
+        customUtilityMapping=customUtilityMappingEC,
+        customMappingPath=customMappingECPath
       }
       
       # regroup gene families to KOs
@@ -169,7 +172,8 @@ workflow workflowMTX {
         OutFileName=PairPaths[sample_index][2]+"_kos.tsv",
         humannDockerImage=humannDockerImage,
         groupName="uniref90_ko",
-        customUtilityMapping=customUtilityMappingKO
+        customUtilityMapping=customUtilityMappingKO,
+        customMappingPath=customMappingKOPath
       }      
    
       # compute relative abundance for gene families, ecs, and pathways
@@ -783,10 +787,12 @@ task Regroup {
     String humannDockerImage
     String groupName
     File? customUtilityMapping
+    String? customMappingPath
   }
 
   String databases = "databases/"
-  String customMapping = if defined(customUtilityMapping) then "-c ${customUtilityMapping}" else ""
+
+  String customMapping = if defined(customUtilityMapping) then "-c ${customMappingPath}" else ""
   # download the utility databases and regroup to ECs
   command {
     mkdir -p ${databases}
