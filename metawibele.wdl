@@ -15,7 +15,7 @@ workflow workflowMetaWibele {
 
     call Preprocess {
         input:
-        rawfileFolder = rawfilePath,
+        fastqFolder = fastqDir,
         extensionPaired = extensionPaired,
         extension = extension,
         outputDir = outputDir
@@ -23,8 +23,8 @@ workflow workflowMetaWibele {
 
     call Categorize {
         input:
-        inputSequence = Preprocess.outputSequence,
-        inputCount = Preprocess.outputCount,
+        inputSequence = if (!skipPreprocess) then Preprocess.outputSequence else inputSequence,
+        inputCount = if (!skipPreprocess) then Preprocess.outputCount else inputCount,
         metadata = metadata,
         outputDir = outputDir
     }
@@ -38,10 +38,12 @@ workflow workflowMetaWibele {
 
     task Preprocess {
         input {
-            Directory fastqFiles
-             
+            Directory? fastqFiles
+            String? extensionPaired
+            String? extension
         }
 
+        
         command {
 
         }
