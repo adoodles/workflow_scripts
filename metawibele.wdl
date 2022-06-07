@@ -27,8 +27,7 @@ workflow workflowMetaWibele {
             input:
             fastqFolder = fastqDir,
             extensionPaired = extensionPaired,
-            extension = extension,
-            outputDir = outputDir
+            extension = extension
         }
     }
 
@@ -36,17 +35,15 @@ workflow workflowMetaWibele {
         input:
         inputSequence = if (!skipPreprocess) then Preprocess.outputSequence else inputSequence,
         inputCount = if (!skipPreprocess) then Preprocess.outputCount else inputCount,
-        metadata = metadata,
-        outputDir = outputDir
+        metadata = metadata
     }
 
     if (!skipPrioritize) {
         call Prioritize {
             input:
             inputAnnotation = Characterize.outputAnnotation,
-            inputAttribute = Characterize.outputAttribute,
-            outputDir = outputDir
-        }
+            inputAttribute = Characterize.outputAttribute
+=        }
     }
 
     task Preprocess {
@@ -64,6 +61,7 @@ workflow workflowMetaWibele {
         }
 
         command {
+            mkdir -p ${preprocessOutputDir}
             metawibele preprocess --input ${fastqFiles} --extension-paired ${extensionPaired} --extension ${extension} --output ${preprocessOutputDir}
         }
 
@@ -97,12 +95,25 @@ workflow workflowMetaWibele {
             sed -i.bak 's/uniref_db =/uniref_db = $(pwd)${databaseLocation}/' metawibele.cfg
             tar -xzf ${uniref90DiamondDatabase} $(pwd)${databaseLocation}
 
+            mkdir -p ${characterizeOutputDir}
             metawibele characterize --input-sequence inputSequence --input-count inputCount --input-metadata metadata --output ${characterizeOutputDir}
         }
 
         output{
             File outputAnnotation = characterizeOutputDir + "finalized/" + basename + "_proteinfamilies_annotation.tsv"
             File outputAttribute = characterizeOutputDir + "finalized/" + basename + "_proteinfamilies_annotation.attribute.tsv"
+        }
+    }
+
+    task Prioritize {
+        input {
+            File inputAnnotation
+            File inputAttribute
+        }
+        
+        command{
+            mkdir -p ${prioritizeOutputDir}
+            metawibele prioritize --input-annotation inputAnnotation --input-attribute inputAttribute --output ${prioritizeOutputDir}
         }
     }
 }
