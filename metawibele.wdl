@@ -1,8 +1,11 @@
-workflow workflowMetaWibele {
+version 1.0
+
+workflow workflowMetaWibele {   
     input {
         Boolean skipPreprocess
         Boolean skipPrioritize
-        Directory? fastqDir
+        # compressed directory of fastq files
+        File? fastqFiles
         String? extensionPaired
         String? extension
         File? inputSequence
@@ -25,9 +28,12 @@ workflow workflowMetaWibele {
     if (!skipPreprocess) {
         call Preprocess {
             input:
-            fastqFolder = fastqDir,
+            fastqFiles = fastqFiles,
             extensionPaired = extensionPaired,
-            extension = extension
+            extension = extension,
+            basename = basename,
+            preprocessOutputDir = preprocessOutputDir,
+            metaWibeleDockerImage = metaWibeleDockerImage
         }
     }
 
@@ -35,85 +41,110 @@ workflow workflowMetaWibele {
         input:
         inputSequence = if (!skipPreprocess) then Preprocess.outputSequence else inputSequence,
         inputCount = if (!skipPreprocess) then Preprocess.outputCount else inputCount,
-        metadata = metadata
+        metadata = inputMetadata,
+        basename = basename,
+        characterizeOutputDir = characterizeOutputDir,
+        metaWibeleDockerImage = metaWibeleDockerImage
     }
 
     if (!skipPrioritize) {
         call Prioritize {
             input:
             inputAnnotation = Characterize.outputAnnotation,
-            inputAttribute = Characterize.outputAttribute
-=        }
-    }
-
-    task Preprocess {
-        input {
-            Directory fastqFiles
-            String extensionPaired
-            String extension
-        }
-
-        if (!defined(fastqFiles) || !defined(extensionPaired) || !defined(extension)) {
-            command {
-                echo 'Input file error preprocess arguments not provided'
-                exit 1
-            }
-        }
-
-        command {
-            mkdir -p ${preprocessOutputDir}
-            metawibele preprocess --input ${fastqFiles} --extension-paired ${extensionPaired} --extension ${extension} --output ${preprocessOutputDir}
-        }
-
-        output {
-            File outputSequence = preprocessOutputDir + "finalized/" + basename + "_genecatalogs.centroid.faa"
-            File outputCount = preprocessOutputDir + "finalized/" + basename + "_genecatalogs_counts.all.tsv"
-        }
-
-        runtime {
-            docker: metaWibeleDockerImage
-            cpu: 8
-            memory: mem + " GB"
-            preemptible: preemptible_attempts
-            disks: "local-disk 501 SSD"
+            inputAttribute = Characterize.outputAttribute,
+            basename = basename,
+            prioritizeOutputDir = prioritizeOutputDir,
+            metaWibeleDockerImage = metaWibeleDockerImage
         }
     }
+}
 
-    task Characterize {
-        input {
-            File inputSequence
-            File inputCount
-            File metadata
-            File uniref90DiamondDatabase
-        }
-
-        String databaseLocation = "/databases/"
-        #install diamond database and run characterize
-        command {
-            mkdir -p ${databaseLocation}
-            metawibele_download_config --config-type global
-            sed -i.bak 's/uniref_db =/uniref_db = $(pwd)${databaseLocation}/' metawibele.cfg
-            tar -xzf ${uniref90DiamondDatabase} $(pwd)${databaseLocation}
-
-            mkdir -p ${characterizeOutputDir}
-            metawibele characterize --input-sequence inputSequence --input-count inputCount --input-metadata metadata --output ${characterizeOutputDir}
-        }
-
-        output{
-            File outputAnnotation = characterizeOutputDir + "finalized/" + basename + "_proteinfamilies_annotation.tsv"
-            File outputAttribute = characterizeOutputDir + "finalized/" + basename + "_proteinfamilies_annotation.attribute.tsv"
-        }
+task Preprocess {
+    input {
+        # compressed directory .tar.gz
+        File? fastqFiles
+        String? extensionPaired
+        String? extension
+        String basename
+        String preprocessOutputDir
+        String metaWibeleDockerImage
     }
 
-    task Prioritize {
-        input {
-            File inputAnnotation
-            File inputAttribute
-        }
-        
-        command{
-            mkdir -p ${prioritizeOutputDir}
-            metawibele prioritize --input-annotation inputAnnotation --input-attribute inputAttribute --output ${prioritizeOutputDir}
-        }
+    String extractDirectory = "preprocessInput/"
+
+    command {
+        mkdir -p ${preprocessOutputDir}
+        tar -xzf ${fastqFiles} $(pwd)${extractDirectory}
+        metawibele preprocess --input ${extractDirectory} --extension-paired ${extensionPaired} --extension ${extension} --output ${preprocessOutputDir}
+    }
+
+    output {
+        File outputSequence = preprocessOutputDir + "finalized/" + basename + "_genecatalogs.centroid.faa"
+        File outputCount = preprocessOutputDir + "finalized/" + basename + "_genecatalogs_counts.all.tsv"
+    }
+
+    runtime {
+        docker: metaWibeleDockerImage
+        cpu: 1
+        memory: "4" + " GB"
+        disks: "local-disk 501 SSD"
+    }
+}
+
+task Characterize {
+    input {
+        File? inputSequence
+        File? inputCount
+        File metadata
+        File uniref90DiamondDatabase
+        String basename
+        String characterizeOutputDir
+        String metaWibeleDockerImage
+    }
+
+    String databaseLocation = "/databases/"
+    #install diamond database and run characterize
+    command {
+        mkdir -p ${databaseLocation}
+        metawibele_download_config --config-type global
+        sed -i.bak 's/uniref_db =/uniref_db = $(pwd)${databaseLocation}/' metawibele.cfg
+        tar -xzf ${uniref90DiamondDatabase} $(pwd)${databaseLocation}
+
+        mkdir -p ${characterizeOutputDir}
+        metawibele characterize --input-sequence inputSequence --input-count inputCount --input-metadata metadata --output ${characterizeOutputDir}
+    }
+
+    output{
+        File outputAnnotation = characterizeOutputDir + "finalized/" + basename + "_proteinfamilies_annotation.tsv"
+        File outputAttribute = characterizeOutputDir + "finalized/" + basename + "_proteinfamilies_annotation.attribute.tsv"
+    }
+
+    runtime {
+        docker: metaWibeleDockerImage
+        cpu: 8
+        memory: "4" + " GB"
+        disks: "local-disk 501 SSD"
+    }
+}
+
+task Prioritize {
+    input {
+        File inputAnnotation
+        File inputAttribute
+        String basename
+        String prioritizeOutputDir
+        String metaWibeleDockerImage
+    }
+    
+    command{
+        mkdir -p ${prioritizeOutputDir}
+        metawibele prioritize --input-annotation inputAnnotation --input-attribute inputAttribute --output ${prioritizeOutputDir}
+    }
+
+    runtime {
+        docker: metaWibeleDockerImage
+        cpu: 8
+        memory: "4" + " GB"
+        disks: "local-disk 501 SSD"
     }
 }
