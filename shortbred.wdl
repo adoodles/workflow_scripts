@@ -27,8 +27,8 @@ workflow workflowShortbred{
 
     call Quantify {
         input: 
-        File markerFile = Identify.outputMarkerFile,
-        String quantifyOutput = quantifyOutput,
+        markerFile = Identify.outputMarkerFile,
+        quantifyOutput = quantifyOutput,
         shortBredDockerImage = shortBredDockerImage
     }
 }
@@ -53,7 +53,7 @@ task Identify {
     }
 
     runtime {
-        docker: metaWibeleDockerImage
+        docker: shortBredDockerImage
         cpu: 8
         memory: "4" + " GB"
         disks: "local-disk 501 SSD"
@@ -73,7 +73,7 @@ task Quantify {
     }
 
     runtime {
-        docker: metaWibeleDockerImage
+        docker: shortBredDockerImage
         cpu: 8
         memory: "4" + " GB"
         disks: "local-disk 501 SSD"
