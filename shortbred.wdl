@@ -20,15 +20,15 @@ workflow workflowShortbred{
         input:
         interestProteins = interestProteins,
         referenceProteins = referenceProteins,
-        outputMarkerFile = outputMarkerFile
-        tmp = tmpResultFolder
+        outputMarkerFile = outputMarkerFile,
+        tmp = tmpResultFolder,
         shortBredDockerImage = shortBredDockerImage
     }
 
     call Quantify {
         input: 
-        File markerFile = Identify.outputMarkerFile
-        String quantifyOutput = quantifyOutput
+        File markerFile = Identify.outputMarkerFile,
+        String quantifyOutput = quantifyOutput,
         shortBredDockerImage = shortBredDockerImage
     }
 }
