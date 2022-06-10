@@ -4,6 +4,8 @@ workflow workflowMetaWibele {
     input {
         Boolean skipPreprocess
         Boolean skipPrioritize
+        Boolean skipAnnotation
+        Boolean? bypass
         # compressed directory of fastq files
         File? fastqFiles
         String? extensionPaired
@@ -11,7 +13,7 @@ workflow workflowMetaWibele {
         File? inputSequence
         File? inputCount
         File inputMetadata
-        File uniref90DiamondDatabase
+        File? uniref90DiamondDatabase
     }
 
     # Set the docker tags
@@ -36,25 +38,36 @@ workflow workflowMetaWibele {
             metaWibeleDockerImage = metaWibeleDockerImage
         }
     }
-
-    call Characterize {
-        input:
-        inputSequence = if (!skipPreprocess) then Preprocess.outputSequence else inputSequence,
-        inputCount = if (!skipPreprocess) then Preprocess.outputCount else inputCount,
-        metadata = inputMetadata,
-        basename = basename,
-        characterizeOutputDir = characterizeOutputDir,
-        metaWibeleDockerImage = metaWibeleDockerImage
-    }
-
-    if (!skipPrioritize) {
-        call Prioritize {
+    if (skipAnnotation) {
+        call Characterize {
             input:
-            inputAnnotation = Characterize.outputAnnotation,
-            inputAttribute = Characterize.outputAttribute,
+            inputSequence = if (!skipPreprocess) then Preprocess.outputSequence else inputSequence,
+            inputCount = if (!skipPreprocess) then Preprocess.outputCount else inputCount,
+            metadata = inputMetadata,
             basename = basename,
-            prioritizeOutputDir = prioritizeOutputDir,
+            characterizeOutputDir = characterizeOutputDir,
             metaWibeleDockerImage = metaWibeleDockerImage
+        }
+    }
+    if (!skipAnnotation) {
+        call CharacterizeWithAnnotation {
+            input:
+            inputSequence = if (!skipPreprocess) then Preprocess.outputSequence else inputSequence,
+            inputCount = if (!skipPreprocess) then Preprocess.outputCount else inputCount,
+            metadata = inputMetadata,
+            basename = basename,
+            characterizeOutputDir = characterizeOutputDir,
+            metaWibeleDockerImage = metaWibeleDockerImage
+        }
+        if (!skipPrioritize) {
+            call Prioritize {
+                input:
+                inputAnnotation = CharacterizeWithAnnotation.outputAnnotation,
+                inputAttribute = CharacterizeWithAnnotation.outputAttribute,
+                basename = basename,
+                prioritizeOutputDir = prioritizeOutputDir,
+                metaWibeleDockerImage = metaWibeleDockerImage
+            }
         }
     }
 }
@@ -96,7 +109,38 @@ task Characterize {
         File? inputSequence
         File? inputCount
         File metadata
-        File uniref90DiamondDatabase
+        String basename
+        String characterizeOutputDir
+        String metaWibeleDockerImage
+    }
+
+    String skipAnnotation = "--bypass-global-homology --bypass-domain-motif --bypass-abundance"
+    # skip annotation shouldn't need database
+    command {
+        metawibele_download_config --config-type global
+        mkdir -p ${characterizeOutputDir}
+        metawibele characterize --input-sequence inputSequence --input-count inputCount --input-metadata metadata --output ${characterizeOutputDir} ${skipAnnotation}
+    }
+
+    output{
+        File outputAttribute = characterizeOutputDir + "finalized/" + basename + "_proteinfamilies_annotation.attribute.tsv"
+    }
+
+    runtime {
+        docker: metaWibeleDockerImage
+        cpu: 8
+        memory: "4" + " GB"
+        disks: "local-disk 501 SSD"
+    }
+}
+
+# todo: half finished
+task CharacterizeWithAnnotation {
+    input {
+        File? inputSequence
+        File? inputCount
+        File metadata
+        File? uniref90DiamondDatabase
         String basename
         String characterizeOutputDir
         String metaWibeleDockerImage
@@ -104,6 +148,7 @@ task Characterize {
 
     String databaseLocation = "/databases/"
     #install diamond database and run characterize
+    # download .cfg file and edit uniref_db value
     command {
         mkdir -p ${databaseLocation}
         metawibele_download_config --config-type global
