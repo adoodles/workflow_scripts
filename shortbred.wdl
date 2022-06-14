@@ -5,10 +5,14 @@ workflow workflowShortbred{
         Boolean skipIdentify
         File? interestProteins
         File? referenceProteins
-        File nucleotideReads
         File? markerFile
+        File inputRead1Files
+        String? inputRead1Identifier
+        String? inputRead2Identifier
+        String inputExtension
         String? tmpResultFolder
-        String quantifyOutput
+        # choice of wgs or genome
+        String quantifyInputMethod
     }
 
     # Set the docker tags
@@ -28,11 +32,26 @@ workflow workflowShortbred{
         }
     }
 
-    call Quantify {
-        input: 
-        markerFile = select_first([markerFile, Identify.outputMarkerFile]),
-        quantifyOutput = quantifyOutput,
-        shortBredDockerImage = shortBredDockerImage
+    # read in a file of the read1 paths
+    Array[Array[String]] inputRead1 = read_tsv(inputRead1Files)
+    
+    # get the sample name and read2 file path
+    scatter (read1 in inputRead1) {
+        Array[String] pairSet = [read1[0], if defined(inputRead2Identifier) then sub(read1[0], inputRead1Identifier + inputExtension, inputRead2Identifier + inputExtension) else ""]
+    }
+
+    Array[Array[String]] PairPaths = pairSet
+
+    scatter (Paths in PairPaths){
+        call Quantify {
+            input: 
+            markerFile = select_first([markerFile, Identify.outputMarkerFile]),
+            quantifyInputMethod = quantifyInputMethod,
+            inputFile = Paths[0],
+            inputPairedFile = Paths[1],
+            inputExtension = inputExtension
+            shortBredDockerImage = shortBredDockerImage
+        }
     }
 }
 
@@ -72,15 +91,23 @@ task Identify {
 task Quantify {
     input {
         File markerFile
-        String quantifyOutput
+        String quantifyInputMethod
+        File inputFile
+        File? inputPairedFile
+        String inputExtension
         String shortBredDockerImage
     }
 
-    String resultExtension = if ( quantifyOutput == "wgs") then ".fna" else ".faa"
+    String resultName = sub(inputFile, inputExtension, "")
+
     command {
-        ./shortbred_quantify.py --markers ${markerFile} --${quantifyOutput} example/wgs${resultExtension}
+        ./shortbred_quantify.py --markers ${markerFile} --${quantifyInputMethod} ${inputFile} ${inputPairedFile} --results quantify/${resultName}.txt
     }
 
+    output{
+        File resultFile = "quantify/${resultName}.txt"
+    }
+    
     runtime {
         docker: shortBredDockerImage
         cpu: 8

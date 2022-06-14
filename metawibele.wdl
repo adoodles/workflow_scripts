@@ -74,8 +74,9 @@ workflow workflowMetaWibele {
 
 task Preprocess {
     input {
-        # compressed directory .tar.gz
+        # compressed directory .tar.gz or add localization step?
         File? fastqFiles
+        String? fastqDirectory
         String? extensionPaired
         String? extension
         String basename
@@ -88,6 +89,7 @@ task Preprocess {
     command {
         mkdir -p ${preprocessOutputDir}
         tar -xzf ${fastqFiles} $(pwd)${extractDirectory}
+        gsutil
         metawibele preprocess --input ${extractDirectory} --extension-paired ${extensionPaired} --extension ${extension} --output ${preprocessOutputDir}
     }
 

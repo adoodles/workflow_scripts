@@ -758,6 +758,7 @@ task FunctionalProfile {
   command {
     mkdir -p ${databases}
     humann_databases --download chocophlan full ${databases} --database-location ${versionSpecificChocophlan}
+    humann_config --update database_folders nucleotide ${databases}
     humann_databases --download uniref uniref90_diamond ${databases} --database-location ${versionSpecificUniRef90}
 
     humann --input ${QCFastqFile} --output ./ --taxonomic-profile ${TaxonomicProfileFile} --threads 8 --o-log ${sample}.log
@@ -792,13 +793,13 @@ task Regroup {
 
   String databases = "databases/"
 
-  String customMapping = if defined(customUtilityMapping) then "-c ${customMappingPath}" else ""
+  String customMapping = if defined(customUtilityMapping) then "-c" else ""
   # download the utility databases and regroup to ECs
   command {
     mkdir -p ${databases}
     humann_databases --download utility_mapping full ${databases} --database-location ${versionSpecificUtilityMapping}
 
-    humann_regroup_table --input ${GeneFamiliesFile} --output ${OutFileName} ${customMapping}
+    humann_regroup_table --input ${GeneFamiliesFile} --output ${OutFileName} ${customMapping} ${customUtilityMapping}
   }
     
   output {
