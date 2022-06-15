@@ -36,8 +36,9 @@ workflow workflowShortbred{
     Array[Array[String]] inputRead1 = read_tsv(inputRead1Files)
     
     # get the sample name and read2 file path
+    # wdl 1.0 does not allow "" to be File value. Placeholder value read1[0] is used here as "invalid" value temporarily until 1.x allows for similar syntax usage
     scatter (read1 in inputRead1) {
-        Array[String] pairSet = [read1[0], if defined(inputRead2Identifier) then sub(read1[0], inputRead1Identifier + inputExtension, inputRead2Identifier + inputExtension) else ""]
+        Array[String] pairSet = [read1[0], if defined(inputRead2Identifier) then sub(read1[0], inputRead1Identifier + "", inputRead2Identifier + "") else read1[0]]
     }
 
     Array[Array[String]] PairPaths = pairSet
@@ -49,7 +50,7 @@ workflow workflowShortbred{
             quantifyInputMethod = quantifyInputMethod,
             inputFile = Paths[0],
             inputPairedFile = Paths[1],
-            inputExtension = inputExtension
+            inputExtension = inputExtension,
             shortBredDockerImage = shortBredDockerImage
         }
     }
@@ -93,21 +94,29 @@ task Quantify {
         File markerFile
         String quantifyInputMethod
         File inputFile
-        File? inputPairedFile
+        File inputPairedFile
         String inputExtension
         String shortBredDockerImage
     }
 
-    String resultName = sub(inputFile, inputExtension, "")
+    String compressionExtension = ".gz"
+    # call response to "invalid" value read1[0] from pairSet creation
+    String pairedFile = if inputFile == inputPairedFile then "" else inputPairedFile
+    String fileName = basename(inputFile)
+    String resultName = sub(fileName, inputExtension, "")
+    String inputFileArg = sub(fileName, compressionExtension, "")
 
-    command {
-        ./shortbred_quantify.py --markers ${markerFile} --${quantifyInputMethod} ${inputFile} ${inputPairedFile} --results quantify/${resultName}.txt
+    command <<<
+        mkdir -p quantify
+        FILENAME=~{inputFile}
+        gzip -d ~{inputFile}
+        shortbred_quantify.py --markers ~{markerFile} --~{quantifyInputMethod} ${FILENAME%.*} --results quantify/~{resultName}.txt
+    >>>
+
+    output {
+        File outputFile = "quantify/${resultName}.txt"
     }
 
-    output{
-        File resultFile = "quantify/${resultName}.txt"
-    }
-    
     runtime {
         docker: shortBredDockerImage
         cpu: 8
