@@ -6,10 +6,10 @@ workflow workflowShortbred{
         File? interestProteins
         File? referenceProteins
         File? markerFile
-        File inputRead1Files
-        String? inputRead1Identifier
-        String? inputRead2Identifier
+        File inputReadFiles
         String inputExtension
+        # only .gz or .tar.gz or none
+        String compressionExtension
         String? tmpResultFolder
         # choice of wgs or genome
         String quantifyInputMethod
@@ -33,24 +33,22 @@ workflow workflowShortbred{
     }
 
     # read in a file of the read1 paths
-    Array[Array[String]] inputRead1 = read_tsv(inputRead1Files)
+    Array[Array[String]] inputRead = read_tsv(inputReadFiles)
     
-    # get the sample name and read2 file path
-    # wdl 1.0 does not allow "" to be File value. Placeholder value read1[0] is used here as "invalid" value temporarily until 1.x allows for similar syntax usage
-    scatter (read1 in inputRead1) {
-        Array[String] pairSet = [read1[0], if defined(inputRead2Identifier) then sub(read1[0], inputRead1Identifier + "", inputRead2Identifier + "") else read1[0]]
+    scatter (read in inputRead) {
+        Array[String] fileSet = [read[0]]
     }
 
-    Array[Array[String]] PairPaths = pairSet
+    Array[Array[String]] FilePaths = fileSet
 
-    scatter (Paths in PairPaths){
+    scatter (Paths in FilePaths){
         call Quantify {
             input: 
             markerFile = select_first([markerFile, Identify.outputMarkerFile]),
             quantifyInputMethod = quantifyInputMethod,
             inputFile = Paths[0],
-            inputPairedFile = Paths[1],
             inputExtension = inputExtension,
+            compressionExtension = compressionExtension,
             shortBredDockerImage = shortBredDockerImage
         }
     }
@@ -94,22 +92,22 @@ task Quantify {
         File markerFile
         String quantifyInputMethod
         File inputFile
-        File inputPairedFile
         String inputExtension
+        String compressionExtension
         String shortBredDockerImage
     }
 
-    String compressionExtension = ".gz"
-    # call response to "invalid" value read1[0] from pairSet creation
-    String pairedFile = if inputFile == inputPairedFile then "" else inputPairedFile
     String fileName = basename(inputFile)
     String resultName = sub(fileName, inputExtension, "")
-    String inputFileArg = sub(fileName, compressionExtension, "")
 
     command <<<
         mkdir -p quantify
         FILENAME=~{inputFile}
-        gzip -d ~{inputFile}
+        if [ ~{compressionExtension} == ".gz" ]; then
+            gzip -d ~{inputFile}
+        elif [ ~{compressionExtension} == ".tar.gz"]; then
+            tar -xzf ~{inputFile}
+        fi
         shortbred_quantify.py --markers ~{markerFile} --~{quantifyInputMethod} ${FILENAME%.*} --results quantify/~{resultName}.txt
     >>>
 
