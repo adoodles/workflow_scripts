@@ -1,23 +1,21 @@
 version 1.0
 
-workflow {
-    File inputRead1Files
-    String inputRead1Identifier
-    String inputRead2Identifier
-    String inputExtension
-    File humanDB
+workflow workflowVamb {
+    input {
+        File inputRead1Files
+        String inputRead1Identifier
+        String inputRead2Identifier
+        String inputExtension
+        File humanDB
 
-    Int? MaxMemGB
+        Int? MaxMemGB
+    }
 
-# 1) Preprocess the reads and check their quality  * QC steps   FASTQ->FASTQ
-# 2) Assemble each sample individually and get the contigs out  * megahit / metaspade contigs  FASTQ->FASTA
-# 3) Concatenate the FASTA files together while making sure all contig headers stay unique, and filter away small contigs  *vamb script
-# 4) Map the reads to the FASTA file to obtain BAM files  * minimap2? (RAM bug) 
-# 5) Run Vamb
-# 6) Postprocess the results
+    String vambDockerImage = "diddlydoodles/vamb-workflow:latest"
+    String kneaddataDockerImage = "biobakery/kneaddata:0.10.0"
 
     # read in a file of the read1 paths
-    Array[Array[String]] inputRead = read_tsv(inputReadFiles)
+    Array[Array[String]] inputRead = read_tsv(inputRead1Files)
     
     scatter (read1 in inputRead) {
         Array[String] fileSet = [read1[0], sub(read1[0], inputRead1Identifier, inputRead2Identifier), sub(basename(read1[0]), inputRead1Identifier + inputExtension, "")]
@@ -31,7 +29,7 @@ workflow {
             sampleName = readPair[2],
             read1 = readPair[0],
             read2 = readPair[1],
-            dockerImage = 
+            dockerImage = vambDockerImage
         }
 
         call QualityControl {
@@ -55,13 +53,13 @@ workflow {
 
     call Concatenate {
         input:
-        assemblyOutputs = Assemble.
+        assemblyOutputs = Assemble.outputFile
     }
 
     scatter (readPair in FilePaths){
-        call Map {
+        call MaptoBam {
             input:
-            concatCatalogue = Concatenate.concatOutput
+            concatCatalogue = Concatenate.concatOutput,
             read1 = readPair[0],
             read2 = readPair[1],
             sample = readPair[2],
@@ -71,30 +69,33 @@ workflow {
 
     call Vamb {
         input:
-        allBam = Map.mapOutput,
+        allBam = MaptoBam.mapOutput,
         concatCatalogue = Concatenate.concatOutput
     }
 
 }
 
 task QcAdapters {
-    String sampleName
-	File read1
-	File read2
+    input {
+        String sampleName
+        File read1
+        File read2
+        String dockerImage
+    }
 
     String outputFile1 = sampleName + "_trimmed_1.fq.gz"
     String outputFile2 = sampleName + "_trimmed_2.fq.gz"
 
     # renaming required to catch result files (trim_galore has output dir option but wdl 1.0 cannot use dir as type)
 	command {
-        mv ${read1} ${sampleName}_1.fq.gz
-        mv ${read2} ${sampleName}_2.fq.gz
+    mv ${read1} ${sampleName}_1.fq.gz
+    mv ${read2} ${sampleName}_2.fq.gz
 
-		trim_galore --paired --phred33 --quality 0 --stringency 5 --length 10 \
-		${sampleName}_1.fq.gz ${sampleName}_2.fq.gz
+    trim_galore --paired --phred33 --quality 0 --stringency 5 --length 10 \
+    ${sampleName}_1.fq.gz ${sampleName}_2.fq.gz
 
-        mv ${sampleName}_1.fq.gz ${outputFile1}
-        mv ${sampleName}_2.fq.gz ${outputFile2}
+    mv ${sampleName}_1.fq.gz ${outputFile1}
+    mv ${sampleName}_2.fq.gz ${outputFile2}
 	}
 	
 	output {
@@ -103,17 +104,23 @@ task QcAdapters {
         String extension = ".fq.gz"
 	}
 	
-	runtime {
-        # only needs trim_galore
-	}
+    runtime {
+        docker: dockerImage
+        cpu: 2
+        memory: 4 + " GB"
+        preemptible: 2
+        disks: "local-disk 20 SSD"
+    }
 }
 
 task QualityControl {
-    File read1
-    File read2
-    String extension
-    File humanDB
-    String kneaddataDockerImage
+    input {
+        File read1
+        File read2
+        String extension
+        File humanDB
+        String kneaddataDockerImage
+    }
 
     String read1Basename = basename(read1, extension)
 
@@ -135,36 +142,54 @@ task QualityControl {
         File outputUnmatchedR1 = "${read1Basename}_kneaddata_unmatched_1.fastq.gz"
         File outputUnmatchedR2 = "${read1Basename}_kneaddata_unmatched_2.fastq.gz"
     }
+
+    runtime {
+        docker: kneaddataDockerImage
+        cpu: 8
+        memory: 24 + " GB"
+        preemptible: 2
+        disks: "local-disk 501 SSD"
+    }
 }
 
 task Assemble {
-    String sampleName
-    File read1
-    File read2
-    File unmatched1
-    File unmatched2
+    input {
+        String sampleName
+        File read1
+        File read2
+        File unmatched1
+        File unmatched2
+        String vambDockerImage
+    }
 
     command <<<
-    	rm -f assemble
-        spades.py --pe1-1 ${read1} --pe1-2 ${read2} --pe1-s ${unmatched1} --pe1-s ${unmatched2} -t 4 -m 16 -o assemble 
-		cat assemble/contigs.fasta | \
-		awk -v var="${sampleName}" '
-			{if($0 ~ /^>/) {contigName=substr($0, 2,length($0))} 
-			else {seq=$0; if(length($0) >= 100) {print ">"var"_"contigName"\n"seq}} }' > assemble/${sampleName}.min100.contigs.fa
+    rm -f assemble
+    spades.py --pe1-1 ${read1} --pe1-2 ${read2} --pe1-s ${unmatched1} --pe1-s ${unmatched2} -t 4 -m 16 -o assemble 
+    cat assemble/contigs.fasta | \
+    awk -v var="${sampleName}" '
+        {if($0 ~ /^>/) {contigName=substr($0, 2,length($0))} 
+        else {seq=$0; if(length($0) >= 100) {print ">"var"_"contigName"\n"seq}} }' > assemble/${sampleName}.min100.contigs.fa
     >>>
 
     output{
         File outputFile = "assemble/${sampleName}.min100.contigs.fa"
     }
 
-    runtime{
-        # spades
-    }
+	runtime {
+		docker: vambDockerImage
+		cpu: 4
+  		memory: "15GB"
+  		preemptible: 2
+  		bootDiskSizeGb: 50
+  		disks: "local-disk 100 SSD"
+	}
 }
 
 task Concatenate {
-    Array[File] assemblyOutputs
-
+    input {
+        Array[File] assemblyOutputs
+        String vambDockerImage
+    }
 
     command <<<
         contatenate.py ./concat/catalogue.fna.gz ~{sep=" " assemblyOutputs}
@@ -173,17 +198,25 @@ task Concatenate {
     output{
         File concatOutput = "concat/catalogue.fna.gz"
     }
-    runtime{
-        #spades
-    }
+
+	runtime {
+		docker: vambDockerImage
+		cpu: 8
+  		memory: "32GB"
+  		preemptible: 2
+  		disks: "local-disk 500 SSD"
+	}
 }
 
-task Map {
-    File concatCatalogue
-    File read1
-    File read2
-    String sample
-    Int? MaxMemGB
+task MaptoBam {
+    input {
+        File concatCatalogue
+        File read1
+        File read2
+        String sample
+        String vambDockerImage
+        Int? MaxMemGB
+    }
     
     Int mem = select_first([MaxMemGB, 32])
     String resultCatalogue = "catalogue.mmi"
@@ -197,14 +230,21 @@ task Map {
         File mapOutput = "${sample}.bam"
     }
 
-    runtime {
-        #minimap, samtools
-    }
+	runtime {
+		docker: vambDockerImage
+		cpu: 8
+  		memory: mem + "GB"
+  		preemptible: 2
+  		disks: "local-disk 120 SSD"
+	}
 }
 
 task Vamb {
-    Array[File] allBam
-    File concatCatalogue
+    input {
+        Array[File] allBam
+        File concatCatalogue
+        String vambDockerImage
+    }
 
     String resultDir = "vambResults"
 
@@ -218,7 +258,11 @@ task Vamb {
         File vambLogFile = "${resultDir}/log.txt"
     }
 
-    runtime {
-        #vamb
-    }
+	runtime {
+		docker: vambDockerImage
+		cpu: 8
+  		memory: "24GB"
+  		preemptible: 2
+  		disks: "local-disk 500 SSD"
+	}
 }
