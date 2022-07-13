@@ -8,7 +8,10 @@ workflow workflowVamb {
         String inputExtension
         File humanDB
 
-        Int? MaxMemGB
+        Int? concatMinLength
+        Int? vambMinFasta
+        Int? assembleMemGB
+        Int? mapMemGB
     }
 
     String vambDockerImage = "diddlydoodles/vamb-workflow:latest"
@@ -47,13 +50,17 @@ workflow workflowVamb {
             read2 = QualityControl.outputR2,
             unmatched1 = QualityControl.outputUnmatchedR1,
             unmatched2 = QualityControl.outputUnmatchedR2,
-            sampleName = readPair[2]
+            sampleName = readPair[2],
+            assembleMemGB = assembleMemGB,
+            vambDockerImage = vambDockerImage
         }
     }
 
     call Concatenate {
         input:
-        assemblyOutputs = Assemble.outputFile
+        assemblyOutputs = Assemble.outputFile,
+        vambDockerImage = vambDockerImage,
+        minLength = concatMinLength
     }
 
     scatter (readPair in FilePaths){
@@ -63,14 +70,17 @@ workflow workflowVamb {
             read1 = readPair[0],
             read2 = readPair[1],
             sample = readPair[2],
-            MaxMemGB = MaxMemGB
+            mapMemGB = mapMemGB,
+            vambDockerImage = vambDockerImage
         }
     }
 
     call Vamb {
         input:
         allBam = MaptoBam.mapOutput,
-        concatCatalogue = Concatenate.concatOutput
+        concatCatalogue = Concatenate.concatOutput,
+        vambDockerImage = vambDockerImage,
+        vambMinFasta = vambMinFasta
     }
 
 }
@@ -83,8 +93,8 @@ task QcAdapters {
         String dockerImage
     }
 
-    String outputFile1 = sampleName + "_trimmed_1.fq.gz"
-    String outputFile2 = sampleName + "_trimmed_2.fq.gz"
+    String outputFile1 = sampleName + "_adapterTrim_1.fq.gz"
+    String outputFile2 = sampleName + "_adapterTrim_2.fq.gz"
 
     # renaming required to catch result files (trim_galore has output dir option but wdl 1.0 cannot use dir as type)
 	command {
@@ -121,19 +131,22 @@ task QualityControl {
         File humanDB
         String kneaddataDockerImage
     }
-
+    String humanDatabase = "databases/kneaddata_human/"
     String read1Basename = basename(read1, extension)
 
     command <<<
-		kneaddata --input ${file1} --input ${file2} -o . \
-		-db {humanDB} --trimmomatic-options "HEADCROP:15 SLIDINGWINDOW:1:20 MINLEN:50" -t 4
-		rm *trimmed*
-		rm *bowtie2*
-		
-		gzip ${read1Basename}_kneaddata_paired_1.fastq
-		gzip ${read1Basename}_kneaddata_paired_2.fastq
-		gzip ${read1Basename}_kneaddata_unmatched_1.fastq
-		gzip ${read1Basename}_kneaddata_unmatched_2.fastq
+    mkdir -p ~{humanDatabase}
+    kneaddata_database --download human_genome bowtie2 ~{humanDatabase} --database-location ~{humanDB}
+
+    kneaddata --input ~{read1} --input ~{read2} -o . \
+    -db ~{humanDatabase} --trimmomatic-options "HEADCROP:15 SLIDINGWINDOW:1:20 MINLEN:50" -t 4
+    rm *trimmed*
+    rm *bowtie2*   
+
+    gzip ~{read1Basename}_kneaddata_paired_1.fastq
+    gzip ~{read1Basename}_kneaddata_paired_2.fastq
+    gzip ~{read1Basename}_kneaddata_unmatched_1.fastq
+    gzip ~{read1Basename}_kneaddata_unmatched_2.fastq
     >>>
 
     output {
@@ -160,25 +173,27 @@ task Assemble {
         File unmatched1
         File unmatched2
         String vambDockerImage
+        Int? assembleMemGB
     }
 
+    Int mem = select_first([assembleMemGB, 64])
+
+    String resultDir = "assemble/"
+    String resultFile = resultDir + sampleName + ".contigs.fasta"
     command <<<
-    rm -f assemble
-    spades.py --pe1-1 ${read1} --pe1-2 ${read2} --pe1-s ${unmatched1} --pe1-s ${unmatched2} -t 4 -m 16 -o assemble 
-    cat assemble/contigs.fasta | \
-    awk -v var="${sampleName}" '
-        {if($0 ~ /^>/) {contigName=substr($0, 2,length($0))} 
-        else {seq=$0; if(length($0) >= 100) {print ">"var"_"contigName"\n"seq}} }' > assemble/${sampleName}.min100.contigs.fa
+    rm -f ~{resultDir}
+    spades.py --pe1-1 ~{read1} --pe1-2 ~{read2} --pe1-s ~{unmatched1} --pe1-s ~{unmatched2} -t 4 -m ~{mem} -o assemble 
+    mv ~{resultDir}contigs.fasta ~{resultFile}
     >>>
 
     output{
-        File outputFile = "assemble/${sampleName}.min100.contigs.fa"
+        File outputFile = "${resultFile}"
     }
 
 	runtime {
 		docker: vambDockerImage
 		cpu: 4
-  		memory: "15GB"
+  		memory: mem + "GB"
   		preemptible: 2
   		bootDiskSizeGb: 50
   		disks: "local-disk 100 SSD"
@@ -189,14 +204,20 @@ task Concatenate {
     input {
         Array[File] assemblyOutputs
         String vambDockerImage
+        Int? minLength
     }
 
+    String resultDirectory = "concat/"
+    String catalogueFile = resultDirectory + "catalogue.fna.gz"
+    Int minimumLength = select_first([minLength, 2000])
+
     command <<<
-        contatenate.py ./concat/catalogue.fna.gz ~{sep=" " assemblyOutputs}
+    mkdir -p ~{resultDirectory}
+    concatenate.py ~{catalogueFile} ~{sep=" " assemblyOutputs} -m ~{minimumLength}
     >>>
 
     output{
-        File concatOutput = "concat/catalogue.fna.gz"
+        File concatOutput = "${catalogueFile}"
     }
 
 	runtime {
@@ -215,15 +236,15 @@ task MaptoBam {
         File read2
         String sample
         String vambDockerImage
-        Int? MaxMemGB
+        Int? mapMemGB
     }
     
-    Int mem = select_first([MaxMemGB, 32])
+    Int mem = select_first([mapMemGB, 64])
     String resultCatalogue = "catalogue.mmi"
 
     command <<<
-        minimap2 -I ~{mem} -d ~{resultCatalogue} ~{concatCatalogue} 
-        minimap2 -I ~{mem} -t 28 -N 5 -ax sr ~{resultCatalogue} ~{read1} ~{read2} | samtools view -F 3584 -b --threads 8 > ~{sample}.bam
+        minimap2 -I ~{mem}g -d ~{resultCatalogue} ~{concatCatalogue} 
+        minimap2 -I ~{mem}g -t 28 -N 5 -a ~{resultCatalogue} ~{read1} ~{read2} | samtools view -F 3584 -b --threads 8 -o ~{sample}.bam
     >>>
 
     output{
@@ -244,18 +265,20 @@ task Vamb {
         Array[File] allBam
         File concatCatalogue
         String vambDockerImage
+        Int? vambMinFasta
     }
 
-    String resultDir = "vambResults"
+    String resultDir = "vambResults/"
+    Int minFasta = select_first([vambMinFasta, 200000])
 
     command <<<
-        mkdir ~{resultDir}
-        vamb -o C --outdir ~{resultDir} --fasta ~{concatCatalogue} --bamfiles ~{sep=" " allBam} --minfasta 200000
+        rm -f ~{resultDir}
+        vamb -o C --outdir ~{resultDir} --fasta ~{concatCatalogue} --bamfiles ~{sep=" " allBam} --minfasta ~{minFasta}
     >>>
 
     output {
-        File vambTSV = "${resultDir}/clusters.tsv"
-        File vambLogFile = "${resultDir}/log.txt"
+        File vambTSV = "${resultDir}clusters.tsv"
+        File vambLogFile = "${resultDir}log.txt"
     }
 
 	runtime {

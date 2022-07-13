@@ -71,7 +71,7 @@ task Identify {
     }
 
     String goiInput = if defined(interestProteins) then 'yes' else 'no'
-    String refInput = if defined(interestProteins) then 'yes' else 'no'
+    String refInput = if defined(referenceProteins) then 'yes' else 'no'
     String tmpFolder = if (defined(tmp)) then "--tmp ${tmp}" else ""
 
     command {
