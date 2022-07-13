@@ -15,31 +15,57 @@ Required Files/Directory Structure for each workflow
     - Homo_sapiens_hg38_transcriptome_Bowtie2_v0.1.tar.gz
     - SILVA_128_LSUParc_SSUParc_ribosomal_RNA_v0.2.tar.gz
 
-
-2. metawibele.wdl (*SKIP FIRST*)
+2. vambbin.wdl
     input:
-    - fastq.gz DIRECTORY** for Preprocess step
-    - fastaa files for Characterize step
+    - input reads fastq.gz
+    - human DB (hg37? example uses hg19)
 
-    - uniref90 database (only if global homonology is required. atm tentative skip)
-    - 
-
-    mspminer (try to make it work)
 
 3. shortbred.wdl
-    identify step (creation of markers)
     input:
-    - proteins of interest (goi?) in fasta format
-    - protein database (uniref90)
+    - fastq.gz
 
-    quantify step (using markers from identify/self provided)
-    input:
-    - markers (fasta)
-        try antibiotic markers first
-    - sequence reads
+    requirements:
+    - marker file 
 
+    special note:
+    - identify step is usually skipped. in this case. only inputs required are the marker file and the input reads
 
 
-task:
-create a mspminer .wdl file to get output as sample table
-    -how to use can see from https://github.com/biobakery/metawibele/blob/master/metawibele/tasks/characterization.py (ctrl + f "mspminer")
+
+
+
+
+605ffc3d-2b43-4230-bf79-dbe5b91c6ab7 --> ~1 hour (70 minutes more accurately) blood sample
+
+
+Questions:
+
+    VAMB results:
+        S1... S5 corresponds to each sample
+        SxCx is one cluster. (is this too much clusters?) --> postprocess to become cluster 1... cluster n?
+        Need abundance report?
+
+    wtx results:
+        what to extract?
+        latest successful run:
+        https://console.cloud.google.com/storage/browser/fc-e92a41e8-a4b7-4424-88e8-b5592bdebc1c/5534632c-6ed2-4a8a-940b-593c04c7dcee/workflowMTX/817b9843-c6ad-4799-b61e-62485c3b308a;tab=objects?authuser=0&prefix=&forceOnObjectsSortingFiltering=false
+
+        Collect stages:
+        -QCReadCount
+        -JoinGeneFamilies
+        -JoinTaxonomicProfile
+
+        -JoinKO, JoinEC, JoinRXN w/post procesing for summation rows
+
+    Remove relab steps.
+
+
+
+
+# 1) Preprocess the reads and check their quality  * QC steps   FASTQ->FASTQ
+# 2) Assemble each sample individually and get the contigs out  * megahit / metaspade contigs  FASTQ->FASTA
+# 3) Concatenate the FASTA files together while making sure all contig headers stay unique, and filter away small contigs  *vamb script
+# 4) Map the reads to the FASTA file to obtain BAM files  * minimap2? (RAM bug) 
+# 5) Run Vamb
+# 6) Postprocess the results
