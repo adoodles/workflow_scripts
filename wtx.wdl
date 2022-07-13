@@ -28,7 +28,9 @@ workflow workflowMTX {
     String? dataType
     File? inputMetadataFile
     File? customUtilityMappingEC
+    String? customMappingECPath
     File? customUtilityMappingKO
+    String? customMappingKOPath
     Int? preemptibleAttemptsOverride
     Int? MaxMemGB_QualityControlTasks
     Int? MaxMemGB_TaxonomicProfileTasks
@@ -71,6 +73,7 @@ workflow workflowMTX {
   String JoinGeneFamilesOutFileName="genefamilies.tsv"
   String JoinECsOutFileName="ecs.tsv"
   String JoinKOsOutFileName="kos.tsv"
+  String JoinRXNsOutFileName="rxns.tsv"
   String JoinPathwaysOutFileName="pathabundance.tsv"
 
   String JoinGeneFamilesRelabOutFileName="genefamilies_relab.tsv"
@@ -97,7 +100,7 @@ workflow workflowMTX {
   
   # get the sample name and read2 file path
   scatter (read1 in inputRead1) {
-     Array[String] pairSet = [read1[0], sub(read1[0], inputRead1Identifier + inputExtension, inputRead2Identifier + inputExtension), sub(basename(read1[0]), inputRead1Identifier + inputExtension, "")]
+     Array[String] pairSet = [read1[0], sub(read1[0], inputRead1Identifier, inputRead2Identifier), sub(basename(read1[0]), inputRead1Identifier + inputExtension, "")]
   }
 
   Array[Array[String]] PairPaths = pairSet
@@ -158,7 +161,8 @@ workflow workflowMTX {
         OutFileName=PairPaths[sample_index][2]+"_ecs.tsv",
         humannDockerImage=humannDockerImage,
         groupName="uniref90_level4ec",
-        customUtilityMapping=customUtilityMappingEC
+        customUtilityMapping=customUtilityMappingEC,
+        customMappingPath=customMappingECPath
       }
       
       # regroup gene families to KOs
@@ -169,9 +173,20 @@ workflow workflowMTX {
         OutFileName=PairPaths[sample_index][2]+"_kos.tsv",
         humannDockerImage=humannDockerImage,
         groupName="uniref90_ko",
-        customUtilityMapping=customUtilityMappingKO
+        customUtilityMapping=customUtilityMappingKO,
+        customMappingPath=customMappingKOPath
       }      
-   
+
+      call Regroup as RegroupRXNs {
+        input:
+        GeneFamiliesFile=FunctionalProfile.GeneFamiliesFile,
+        versionSpecificUtilityMapping=versionSpecificUtilityMapping,
+        OutFileName=PairPaths[sample_index][2]+"_rxns.tsv",
+        humannDockerImage=humannDockerImage,
+        groupName="uniref90_rxn",
+        specifyGroup="uniref90_rxn"
+      }
+
       # compute relative abundance for gene families, ecs, and pathways
       call RenormTable as RenormTableGenes {
         input:
@@ -222,6 +237,13 @@ workflow workflowMTX {
       input:
       InFiles=RegroupKOs.OutFile,
       OutFileName=JoinKOsOutFileName,
+      humannDockerImage=humannDockerImage,
+      MaxMemGB=JoinNormMemDefault
+    }
+    call JoinTables as JoinRXNs {
+      input:
+      InFiles=RegroupRXNs.OutFile,
+      OutFileName=JoinRXNsOutFileName,
       humannDockerImage=humannDockerImage,
       MaxMemGB=JoinNormMemDefault
     }
@@ -365,22 +387,6 @@ workflow workflowMTX {
     OutFileName=JoinedTaxonomicProfilesFileName,
     workflowsDockerImage=workflowsDockerImage,
     MaxMemGB=JoinNormMemDefault
-  }
-
-  call VisualizationReport {
-    input:
-    QCCountsFile=QCReadCount.OutFile,
-    TaxonomicProfileFile=JoinTaxonomicProfiles.OutFile,
-    setbypassFunctionalProfiling=setbypassFunctionalProfiling,
-    PathwaysFile=JoinPathwaysRelab.OutFile,
-    ECsFile=JoinECsRelab.OutFile,
-    FunctionalReadSpeciesCountFile=FunctionalCount.OutFile,
-    FunctionalFeatureCountsFile=JoinFeatureCounts.OutFile,
-    ProjectName=ProjectName,
-    OutFileName=VisualizationsFileName,
-    metadataSet=metadataSet,
-    MetadataFile=inputMetadataFile,
-    workflowsDockerImage=workflowsDockerImage
   }
 
 }
@@ -783,16 +789,19 @@ task Regroup {
     String humannDockerImage
     String groupName
     File? customUtilityMapping
+    String? customMappingPath
+    String? specifyGroup
   }
 
   String databases = "databases/"
-  String customMapping = if defined(customUtilityMapping) then "-c ${customUtilityMapping}" else ""
+
+  String customMapping = if defined(customUtilityMapping) then "-c" else ""
+  String groupFlag = if defined(specifyGroup) then "-g" else ""
   # download the utility databases and regroup to ECs
   command {
     mkdir -p ${databases}
     humann_databases --download utility_mapping full ${databases} --database-location ${versionSpecificUtilityMapping}
-
-    humann_regroup_table --input ${GeneFamiliesFile} --output ${OutFileName} --groups ${groupName} ${customMapping}
+    humann_regroup_table --input ${GeneFamiliesFile} --output ${OutFileName} ${customMapping} ${customUtilityMapping} ${groupFlag} ${specifyGroup}
   }
     
   output {
@@ -974,61 +983,3 @@ task CountFeatures {
       disks: "local-disk 10 SSD"
   }
 }
-
-task VisualizationReport {
-  input {
-    File QCCountsFile
-    File TaxonomicProfileFile
-    Boolean setbypassFunctionalProfiling
-    File? PathwaysFile
-    File? FunctionalReadSpeciesCountFile
-    File? FunctionalFeatureCountsFile
-    File? ECsFile
-    String ProjectName
-    String OutFileName
-    String metadataSet
-    File? MetadataFile
-    String workflowsDockerImage
-  }
-  
-  String QCCountsFolder = "input/kneaddata/merged/"
-  String TaxonomyFolder = "input/metaphlan/merged/"
-  String FunctionalMergedFolder = "input/humann/merged/"
-  String FunctionalCountsFolder = "input/humann/counts/"
-  
-  # symlink files to the expected folder locations
-  # run visualizations
-  command <<<
-    mkdir -p ~{QCCountsFolder}
-    (cd ~{QCCountsFolder} && ln -s ~{QCCountsFile})
-    
-    mkdir -p ~{TaxonomyFolder}
-    (cd ~{TaxonomyFolder} && ln -s ~{TaxonomicProfileFile})
-    
-    if [ ~{setbypassFunctionalProfiling} == false ]; then
-      mkdir -p ~{FunctionalMergedFolder}
-      (cd ~{FunctionalMergedFolder} && ln -s ~{PathwaysFile} && ln -s ~{ECsFile})
-      mkdir -p ~{FunctionalCountsFolder}
-      (cd ~{FunctionalCountsFolder} && ln -s ~{FunctionalReadSpeciesCountFile} && ln -s ~{FunctionalFeatureCountsFile})
-    fi
-
-    if [ ~{metadataSet} == 'yes' ]; then
-      biobakery_workflows wmgx_vis --input input --output ~{OutFileName} --project-name ~{ProjectName} --exclude-workflow-info --input-metadata ~{MetadataFile}
-    else
-      biobakery_workflows wmgx_vis --input input --output ~{OutFileName} --project-name ~{ProjectName} --exclude-workflow-info 
-    fi
-    
-    >>>
-  
-  output {
-    File OutFile = "${OutFileName}.zip"
-  }
-  
-  runtime {
-    docker: workflowsDockerImage
-    cpu: 1
-      memory: "5 GB"
-      disks: "local-disk 10 SSD"
-  }
-}
-
