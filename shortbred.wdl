@@ -59,6 +59,10 @@ workflow workflowShortbred{
         quantifyResults = Quantify.outputFile,
         dockerImage = metaphlanDockerImage
     }
+
+    output {
+        File resultTable = Collect.mergedOutput
+    }
 }
 
 task Identify {
@@ -140,9 +144,9 @@ task Collect {
         String dockerImage
     }
 
-    String resultFilePath = "mergedResults.txt"
+    String resultFilePath = "mergedResults.tsv"
 
-    # **check if combineAndWrite's sep delimiter is same as input for listOfFiles.split()**
+    # **check if combineAndWrite's sep delimiter is same as argument for listOfFiles.split()**
     command <<<
         python3<<CODE
         import pandas as pd
@@ -153,9 +157,10 @@ task Collect {
             fileList = listOfFiles.split(" ")
             for f in fileList:
                 colName = os.path.basename(f)
+                colName = colName.split("_", 1)[0]
                 currentTable = pd.read_csv(f, sep = '\t', usecols = ['Family', 'Count'])
                 currentTable.rename(columns={'Count' : colName}, inplace=True)
-                if mergedTables.empty :
+                if mergedTables.empty:
                     mergedTables = currentTable
                 else:
                     mergedTables = pd.merge(mergedTables, currentTable, how = 'outer', on = ['Family'])

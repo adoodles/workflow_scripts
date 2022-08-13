@@ -32,7 +32,8 @@ Required Files/Directory Structure for each workflow
     - identify step is usually skipped. in this case. only inputs required are the marker file and the input reads
 
 
-
+** Key points while doing sample test runs:
+    - sample should consist of the largest sample + smallest sample + 5-10 random ones (limit testing)
 
 
 
@@ -41,27 +42,28 @@ Required Files/Directory Structure for each workflow
 
 Questions:
 
-    VAMB results:
-        S1... S5 corresponds to each sample
-        SxCx is one cluster. (is this too much clusters?) --> postprocess to become cluster 1... cluster n?
-        Need abundance report?
-
-    wtx results:
-        what to extract?
-        latest successful run:
-        https://console.cloud.google.com/storage/browser/fc-e92a41e8-a4b7-4424-88e8-b5592bdebc1c/5534632c-6ed2-4a8a-940b-593c04c7dcee/workflowMTX/817b9843-c6ad-4799-b61e-62485c3b308a;tab=objects?authuser=0&prefix=&forceOnObjectsSortingFiltering=false
-
-        Collect stages:
-        -QCReadCount
-        -JoinGeneFamilies
-        -JoinTaxonomicProfile
-
-        -JoinKO, JoinEC, JoinRXN w/post procesing for summation rows
-
-    Remove relab steps.
+    - Collect and output results at the end of each scatter task (QC, profiling) (save output to somewhere else?)
+    - Output will be checked to remove reliance on call caching. (output will become entry in input table)
+    - bypass options provided at every stage/ "stop at"?
 
 
+mspminer workflow
 
+fastq -> QC (kneaddata) (trim galore? see if kd has trim function) -> raw files -> assembly (megaHIT) w prodigal -> predict (prodigal) -> check evaluation (checkM) (fallback: MetaQUAST) -> 
+
+--> cdhit -> mspminer -> output
+--> metaBAT2 -> output
+
+** toolbox image with all required program (including licensed program like usearch/modified settings.ini or can just pull from github)
+
+programs:
+    -usearch
+    -samtools
+    -bwa
+
+**usearch & mspminer settings.ini use wget to download from cloud storage
+
+**** checkM only works on binned stuff: after metabat
 
 # 1) Preprocess the reads and check their quality  * QC steps   FASTQ->FASTQ
 # 2) Assemble each sample individually and get the contigs out  * megahit / metaspade contigs  FASTQ->FASTA
