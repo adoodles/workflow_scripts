@@ -15,31 +15,59 @@ Required Files/Directory Structure for each workflow
     - Homo_sapiens_hg38_transcriptome_Bowtie2_v0.1.tar.gz
     - SILVA_128_LSUParc_SSUParc_ribosomal_RNA_v0.2.tar.gz
 
-
-2. metawibele.wdl (*SKIP FIRST*)
+2. vambbin.wdl
     input:
-    - fastq.gz DIRECTORY** for Preprocess step
-    - fastaa files for Characterize step
+    - input reads fastq.gz
+    - human DB (hg37? example uses hg19)
 
-    - uniref90 database (only if global homonology is required. atm tentative skip)
-    - 
-
-    mspminer (try to make it work)
 
 3. shortbred.wdl
-    identify step (creation of markers)
     input:
-    - proteins of interest (goi?) in fasta format
-    - protein database (uniref90)
+    - fastq.gz
 
-    quantify step (using markers from identify/self provided)
-    input:
-    - markers (fasta)
-        try antibiotic markers first
-    - sequence reads
+    requirements:
+    - marker file 
 
+    special note:
+    - identify step is usually skipped. in this case. only inputs required are the marker file and the input reads
 
 
-task:
-create a mspminer .wdl file to get output as sample table
-    -how to use can see from https://github.com/biobakery/metawibele/blob/master/metawibele/tasks/characterization.py (ctrl + f "mspminer")
+** Key points while doing sample test runs:
+    - sample should consist of the largest sample + smallest sample + 5-10 random ones (limit testing)
+
+
+
+605ffc3d-2b43-4230-bf79-dbe5b91c6ab7 --> ~1 hour (70 minutes more accurately) blood sample
+
+
+Questions:
+
+    - Collect and output results at the end of each scatter task (QC, profiling) (save output to somewhere else?)
+    - Output will be checked to remove reliance on call caching. (output will become entry in input table)
+    - bypass options provided at every stage/ "stop at"?
+
+
+mspminer workflow
+
+fastq -> QC (kneaddata) (trim galore? see if kd has trim function) -> raw files -> assembly (megaHIT) w prodigal -> predict (prodigal) -> check evaluation (checkM) (fallback: MetaQUAST) -> 
+
+--> cdhit -> mspminer -> output
+--> metaBAT2 -> output
+
+** toolbox image with all required program (including licensed program like usearch/modified settings.ini or can just pull from github)
+
+programs:
+    -usearch
+    -samtools
+    -bwa
+
+**usearch & mspminer settings.ini use wget to download from cloud storage
+
+**** checkM only works on binned stuff: after metabat
+
+# 1) Preprocess the reads and check their quality  * QC steps   FASTQ->FASTQ
+# 2) Assemble each sample individually and get the contigs out  * megahit / metaspade contigs  FASTQ->FASTA
+# 3) Concatenate the FASTA files together while making sure all contig headers stay unique, and filter away small contigs  *vamb script
+# 4) Map the reads to the FASTA file to obtain BAM files  * minimap2? (RAM bug) 
+# 5) Run Vamb
+# 6) Postprocess the results

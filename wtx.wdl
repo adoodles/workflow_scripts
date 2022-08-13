@@ -76,22 +76,26 @@ workflow workflowMTX {
   String JoinRXNsOutFileName="rxns.tsv"
   String JoinPathwaysOutFileName="pathabundance.tsv"
 
-  String JoinGeneFamilesRelabOutFileName="genefamilies_relab.tsv"
-  String JoinECsRelabOutFileName="ecs_relab.tsv"
-  String JoinPathwaysRelabOutFileName="pathabundance_relab.tsv"
-
-  String CountRelabGenesFileName="humann_genefamilies_relab_counts.tsv"
-  String CountRelabECsFileName="humann_ecs_relab_counts.tsv"
-  String CountRelabPathwaysFileName="humann_pathabundance_relab_counts.tsv"
-
   String JoinedFeatureCountsFileName="humann_feature_counts.tsv"
   String FunctionalCountFileName = "humann_read_and_species_count_table.tsv"
   
   String StrainPhlAnCladeList = "strainphlan_clade_list.txt"
-  
-  String VisualizationsFileName = ProjectName+"_visualizations"
-  
-  # default mem settings
+    
+  # mem settings
+  # Quality Control Step: Assumes linear space complexity O(n)
+  Int QCMemBase = 24
+  Int QCMemBaseFileSize = 4
+  Int QCMemIncreaseInterval = 8
+
+  # Taxnomic Profile Step: No memory issues
+  Int TaxProfileMemBase = 8
+
+  # Functional Profile Step:
+  Int FuncProfileMemBase = 32
+  Int FuncProfileBaseFileSize = 3
+  Int FuncProfileIncreaseInterval = 8
+  Int FuncProfileStorage = 500
+
   Int JoinNormMemDefault = 10
   Int JoinNormMemDefaultGenes = 50
 
@@ -124,7 +128,10 @@ workflow workflowMTX {
       dataType=dataTypeSetting,
       kneaddataDockerImage=kneaddataDockerImage,
       preemptibleAttemptsOverride=preemptibleAttemptsOverride,
-      MaxMemGB=MaxMemGB_QualityControlTasks
+      MaxMemGB=MaxMemGB_QualityControlTasks,
+      QCMemBase = QCMemBase,
+      QCMemBaseFileSize = QCMemBaseFileSize,
+      QCMemIncreaseInterval = QCMemIncreaseInterval
     }
     # Part 2: For each sample, run taxonomic profiling with MetaPhlAn v2
     call TaxonomicProfile {
@@ -133,7 +140,8 @@ workflow workflowMTX {
       QCFastqFile=QualityControl.QCFastqFile,
       metaphlanDockerImage=metaphlanDockerImage,
       preemptibleAttemptsOverride=preemptibleAttemptsOverride,
-      MaxMemGB=MaxMemGB_TaxonomicProfileTasks
+      MaxMemGB=MaxMemGB_TaxonomicProfileTasks,
+      TaxProfileMemBase = TaxProfileMemBase
     }
    }
    
@@ -150,7 +158,11 @@ workflow workflowMTX {
         humannDockerImage=humannDockerImage,
         preemptibleAttemptsOverride=preemptibleAttemptsOverride,
         MaxMemGB=MaxMemGB_FunctionalProfileTasks,
-        MaxDiskGB=MaxDiskGB_FunctionalProfileTasks
+        MaxDiskGB=MaxDiskGB_FunctionalProfileTasks,
+        FuncProfileMemBase = FuncProfileMemBase,
+        FuncProfileBaseFileSize = FuncProfileBaseFileSize,
+        FuncProfileIncreaseInterval = FuncProfileIncreaseInterval,
+        FuncProfileStorage = FuncProfileStorage
       }
 
       # regroup gene families to ECs
@@ -185,29 +197,6 @@ workflow workflowMTX {
         humannDockerImage=humannDockerImage,
         groupName="uniref90_rxn",
         specifyGroup="uniref90_rxn"
-      }
-
-      # compute relative abundance for gene families, ecs, and pathways
-      call RenormTable as RenormTableGenes {
-        input:
-        InFile=FunctionalProfile.GeneFamiliesFile,
-        OutFileName=PairPaths[sample_index][2]+"_genefamilies_relab.tsv",
-        humannDockerImage=humannDockerImage,
-        MaxMemGB=JoinNormMemDefaultGenes
-      }
-      call RenormTable as RenormTableECs {
-        input:
-        InFile=RegroupECs.OutFile,
-        OutFileName=PairPaths[sample_index][2]+"_ecs_relab.tsv",
-        humannDockerImage=humannDockerImage,
-        MaxMemGB=JoinNormMemDefault
-      }
-      call RenormTable as RenormTablePathways {
-        input:
-        InFile=FunctionalProfile.PathwayAbundanceFile,
-        OutFileName=PairPaths[sample_index][2]+"_pathabundance_relab.tsv",
-        humannDockerImage=humannDockerImage,
-        MaxMemGB=JoinNormMemDefault
       }
     }
   
@@ -254,57 +243,6 @@ workflow workflowMTX {
       humannDockerImage=humannDockerImage,
       MaxMemGB=JoinNormMemDefault
     }
-    call JoinTables as JoinGeneFamiliesRelab {
-      input:
-      InFiles=RenormTableGenes.OutFile,
-     OutFileName=JoinGeneFamilesRelabOutFileName,
-      humannDockerImage=humannDockerImage,
-      MaxMemGB=JoinNormMemDefault
-    }
-    call JoinTables as JoinECsRelab {
-      input:
-      InFiles=RenormTableECs.OutFile,
-      OutFileName=JoinECsRelabOutFileName,
-      humannDockerImage=humannDockerImage,
-      MaxMemGB=JoinNormMemDefault
-    }
-    call JoinTables as JoinPathwaysRelab {
-      input:
-      InFiles=RenormTablePathways.OutFile,
-      OutFileName=JoinPathwaysRelabOutFileName,
-      humannDockerImage=humannDockerImage,
-      MaxMemGB=JoinNormMemDefault
-    }
-
-    # create a file of feature counts from functional profiling data
-    call CountFeatures as CountRelabGenes {
-      input:
-      InFile=JoinGeneFamiliesRelab.OutFile,
-      OutFileName=CountRelabGenesFileName,
-      Options="--reduce-sample-name --ignore-un-features --ignore-stratification",
-      workflowsDockerImage=workflowsDockerImage
-    }
-    call CountFeatures as CountRelabECs {
-      input:
-      InFile=JoinECsRelab.OutFile,
-      OutFileName=CountRelabECsFileName,
-      Options="--reduce-sample-name --ignore-un-features --ignore-stratification",
-      workflowsDockerImage=workflowsDockerImage
-    }
-    call CountFeatures as CountRelabPathways {
-      input:
-      InFile=JoinPathwaysRelab.OutFile,
-      OutFileName=CountRelabPathwaysFileName,
-      Options="--reduce-sample-name --ignore-un-features --ignore-stratification",
-      workflowsDockerImage=workflowsDockerImage
-    }
-    call JoinTables as JoinFeatureCounts {
-      input:
-      InFiles=[CountRelabGenes.OutFile, CountRelabECs.OutFile, CountRelabPathways.OutFile],
-      OutFileName=JoinedFeatureCountsFileName,
-      humannDockerImage=humannDockerImage,
-      MaxMemGB=JoinNormMemDefault
-    }   
   }
 
   if (! setbypassStrainProfiling ) {
@@ -372,14 +310,6 @@ workflow workflowMTX {
     kneaddataDockerImage=kneaddataDockerImage
   }
 
-  # count the species from the taxonomic profiles
-  call CountFeatures as TaxonomicCount {
-    input:
-    InFile=JoinTaxonomicProfiles.OutFile,
-    OutFileName=TaxonomicProfilesCountsFileName,
-    Options="--include s__ --filter t__ --reduce-sample-name",
-    workflowsDockerImage=workflowsDockerImage
-  } 
   # join all taxonomic profiles, gene families, ecs, and pathways (including relative abundance files) from all samples
   call JoinTaxonomicProfiles {
     input:
@@ -389,6 +319,27 @@ workflow workflowMTX {
     MaxMemGB=JoinNormMemDefault
   }
 
+  call Collect {
+    input:
+    joinTableEC=JoinECs.OutFile,
+    joinTableKO=JoinKOs.OutFile,
+    joinTableRXN=JoinRXNs.OutFile,
+    joinTablePathways=JoinPathways.OutFile,
+    joinTableGeneFamilies=JoinGeneFamilies.OutFile,
+    joinTaxonomicProfiles=JoinTaxonomicProfiles.OutFile,
+    qcReadCount = QCReadCount.OutFile,
+    dockerImage = metaphlanDockerImage
+  }
+
+  output {
+    Array[File] ecOutput = Collect.ecOutput
+    Array[File] koOutput = Collect.koOutput
+    Array[File] rxnOutput = Collect.rxnOutput
+    Array[File] pathwayOutput = Collect.pathwayOutput
+    Array[File] geneFamOutput = Collect.geneFamOutput
+    File qcOutput = Collect.qcOutput
+    File taxoProfileOutput = Collect.taxoProfileOutput
+  }
 }
 
 task QualityControl {
@@ -407,8 +358,14 @@ task QualityControl {
     String kneaddataDockerImage
     Int? MaxMemGB
     Int? preemptibleAttemptsOverride
+    Int QCMemBase
+    Int QCMemBaseFileSize
+    Int QCMemIncreaseInterval
   }
-  Int mem = select_first([MaxMemGB, 24])
+  Int fileSize = ceil(size(rawfile1, 'GB'))
+  Int fileLargerBy = fileSize - QCMemBaseFileSize
+  Int scaledMem = if fileLargerBy <= 0 then QCMemBase else QCMemBase + fileLargerBy * QCMemIncreaseInterval
+  Int mem = select_first([MaxMemGB, scaledMem])
   Int preemptible_attempts = select_first([preemptibleAttemptsOverride, 2])
   
   String useCustomDB1 = if defined(customDB1) then "yes" else "no"
@@ -502,9 +459,10 @@ task TaxonomicProfile {
     String metaphlanDockerImage
     Int? MaxMemGB
     Int? preemptibleAttemptsOverride
+    Int TaxProfileMemBase
   }
   
-  Int mem = select_first([MaxMemGB, 8])
+  Int mem = select_first([MaxMemGB, TaxProfileMemBase])
   Int preemptible_attempts = select_first([preemptibleAttemptsOverride, 2])
   
   String tmpdir = "tmp/"
@@ -748,10 +706,17 @@ task FunctionalProfile {
     Int? MaxMemGB
     Int? MaxDiskGB
     Int? preemptibleAttemptsOverride
+    Int FuncProfileMemBase
+    Int FuncProfileBaseFileSize
+    Int FuncProfileIncreaseInterval
+    Int FuncProfileStorage
   }
+  Int fileSize = ceil(size(QCFastqFile, 'GB'))
+  Int fileLargerBy = fileSize - FuncProfileBaseFileSize
+  Int scaledMem = if fileLargerBy <= 0 then FuncProfileMemBase else FuncProfileMemBase + fileLargerBy * FuncProfileIncreaseInterval
 
-  Int mem = select_first([MaxMemGB, 32])
-  Int disk = select_first([MaxDiskGB, 120])
+  Int mem = select_first([MaxMemGB, scaledMem])
+  Int disk = select_first([MaxDiskGB, FuncProfileStorage])
   Int preemptible_attempts = select_first([preemptibleAttemptsOverride, 2])
   
   String databases = "databases/"
@@ -929,6 +894,7 @@ task JoinTables {
     cpu: 1
       memory: mem+" GB"
       disks: "local-disk 10 SSD"
+      maxRetries: 2
   }
 }
 
@@ -959,27 +925,68 @@ task FunctionalCount {
   }
 }
 
-task CountFeatures {
+task Collect {
   input {
-    File InFile
-    String OutFileName
-    String Options
-    String workflowsDockerImage
+    File? joinTableEC
+    File? joinTableKO
+    File? joinTableRXN
+    File? joinTablePathways
+    File? joinTableGeneFamilies
+    File qcReadCount
+    File joinTaxonomicProfiles
+    String dockerImage
   }
 
-  # count features in a table
-  command {
-    count_features.py --input ${InFile} --output ${OutFileName} ${Options}
-  }
+  String ecFolder = "ec/"
+  String koFolder = "ko/"
+  String rxnFolder = "rxn/"
+  String pathwayFolder = "pathway/"
+  String geneFamilyFolder = "geneFamilies/"
 
-  output {
-    File OutFile = "${OutFileName}"
+  Array[String] folders = [ecFolder, koFolder, rxnFolder, pathwayFolder, geneFamilyFolder]
+
+  command <<<
+    for folder in ~{sep=" " folders}; do mkdir -p $folder; done
+    python3<<CODE
+    import pandas as pd
+    import os.path
+    import shutil
+
+    def postprocessJoinTable(file, destFolder):
+        folderName = os.path.dirname(file)
+        fileName = os.path.basename(file)
+        resultName = "summarized_" + fileName
+        resultFile = destFolder + resultName
+        currentTable = pd.read_csv(file, sep = '\t')
+        currentTable.columns = currentTable.columns.str.split("_", 1).str.get(0)
+        currentTable.to_csv(file, sep = '\t', index=False)
+        leftMostColumn = list(currentTable.columns)[0]
+        currentTable.drop(currentTable[currentTable[leftMostColumn].str.contains('\|')].index, inplace=True)
+        currentTable.to_csv(resultFile, sep = '\t', index=False)
+        shutil.move(file, destFolder)
+    postprocessJoinTable("~{joinTableEC}", "~{ecFolder}")
+    postprocessJoinTable("~{joinTableKO}", "~{koFolder}")
+    postprocessJoinTable("~{joinTableRXN}", "~{rxnFolder}")
+    postprocessJoinTable("~{joinTablePathways}", "~{pathwayFolder}")
+    postprocessJoinTable("~{joinTableGeneFamilies}", "~{geneFamilyFolder}")
+    CODE
+  >>>
+
+  output{
+    Array[File] ecOutput = glob(ecFolder + "*.tsv")
+    Array[File] koOutput = glob(koFolder + "*.tsv")
+    Array[File] rxnOutput = glob(rxnFolder + "*.tsv")
+    Array[File] pathwayOutput = glob(pathwayFolder + "*.tsv")
+    Array[File] geneFamOutput = glob(geneFamilyFolder + "*.tsv")
+    File qcOutput = qcReadCount
+    File taxoProfileOutput = joinTaxonomicProfiles
   }
 
   runtime {
-    docker: workflowsDockerImage
-    cpu: 1
-      memory: "5 GB"
-      disks: "local-disk 10 SSD"
+    docker: dockerImage
+    cpu: 4
+    memory: "8" + " GB"
+    preemptible: 2
+    disks: "local-disk 50 SSD"
   }
 }
