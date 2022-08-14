@@ -362,9 +362,8 @@ task MaptoCount {
 	}
 
 	command {
-	wget https://raw.githubusercontent.com/lpryszcz/bin/master/bam2counts.py -P /msp
-	wget https://raw.githubusercontent.com/lpryszcz/bin/master/python_modules/genome_annotation.py -P /msp
-	sed -i "s/commands/subprocess/" /msp/bam2counts.py
+	wget https://raw.githubusercontent.com/adoodles/workflow_scripts/terra-biobakery/required%20scripts/bam2counts.py -P /msp
+	wget https://raw.githubusercontent.com/adoodles/workflow_scripts/terra-biobakery/required%20scripts/genome_annotation.py -P /msp
 	bwa mem -t 8 -M ${nrFa} ${fileR1} ${fileR2} | \
 	samtools view -h -Su -F 2308 -q 0 | \
 	samtools sort -n -@ 8 -m 2G -O bam -o ${sample}.sort.bam 
