@@ -46,7 +46,7 @@ workflow workflowMTX {
   # Set the docker tags
   String kneaddataDockerImage = "biobakery/kneaddata:0.10.0"
   String metaphlanDockerImage = "biobakery/metaphlan:4.0.2"
-  String humannDockerImage = "biobakery/humann:3.0.0.a.4"
+  String humannDockerImage = "biobakery/humann:3.6"
   
   # for the workflows script tasks use the workflows image without the databases (to reduce data download amount)
   String workflowsDockerImage = "biobakery/workflows:3.0.0.a.6_anadama0.7.9_no_metaphlan_db"
@@ -89,7 +89,7 @@ workflow workflowMTX {
   Int QCMemIncreaseInterval = 8
 
   # Taxnomic Profile Step: metaphlan4 requires minimum disk size of 15GB
-  Int TaxProfileMemBase = 8
+  Int TaxProfileMemBase = 32
   Int TaxProfileDiskBase = 50
 
   # Functional Profile Step:
@@ -150,7 +150,7 @@ workflow workflowMTX {
    }
    
    if (! setbypassFunctionalProfiling ) {
-    # Part 3: For each sample, run functional profiling with HUMAnN v2
+    # Part 3: For each sample, run functional profiling with HUMAnN v3
     scatter (sample_index in range(length(PairPaths))) {
       call FunctionalProfile {
         input: 
@@ -475,7 +475,7 @@ task TaxonomicProfile {
   String tmpdir = "tmp/"
   String database_files = "/usr/local/lib/python3.6/dist-packages/metaphlan/metaphlan_databases/*"
   String local_db = tmpdir + "metaphlan_databases/"
-  String index = "mpa_vJan21_CHOCOPhlAnSGB_202103"
+  String index = "mpa_vOct22_CHOCOPhlAnSGB_202212"
 
   # create a temp directory and then run metaphlan
   command {
@@ -737,6 +737,7 @@ task FunctionalProfile {
 
   # download the two reference databases and run humann
   command {
+    pip3 install --upgrade humann==3.8
     mkdir -p ${databases}
     humann_databases --download chocophlan full ${databases} --database-location ${versionSpecificChocophlan}
     humann_databases --download uniref uniref90_diamond ${databases} --database-location ${versionSpecificUniRef90}
@@ -998,7 +999,7 @@ task Collect {
   runtime {
     docker: dockerImage
     cpu: 4
-    memory: "8" + " GB"
+    memory: "16" + " GB"
     preemptible: 2
     disks: "local-disk 50 SSD"
   }
