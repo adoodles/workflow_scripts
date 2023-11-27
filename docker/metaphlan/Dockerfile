@@ -24,6 +24,4 @@ RUN git clone https://github.com/SegataLab/cmseq.git && \
 
 RUN pip3 install metaphlan==4.0.6
 
-CMD metaphlan --install --nproc 24
-
 WORKDIR /tmp
