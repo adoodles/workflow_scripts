@@ -9,11 +9,7 @@ RUN pip3 install cloudpickle
 
 RUN pip3 install anadama2 
 
-RUN mkdir -p $HOME/tools/bowtie2/ && cd $HOME/tools/bowtie2/ && \
-    wget https://sourceforge.net/projects/bowtie-bio/files/bowtie2/2.4.2/bowtie2-2.4.2-sra-linux-x86_64.zip/download \
-    && unzip download && cd /
-
-ENV PATH "$HOME/tools/bowtie2/bowtie2-2.4.2-sra-linux-x86_64:$PATH"
+RUN apt-get install -y bowtie2
 
 RUN pip3 install Cython
 
