@@ -18,6 +18,7 @@ workflow workflowMTX {
     File versionSpecificChocophlan
     File versionSpecificUniRef90
     File versionSpecificUtilityMapping
+    File versionSpecificMetaphlanDB
     File StrainphlanReferences
     
     # Optional input variables
@@ -45,8 +46,8 @@ workflow workflowMTX {
   
   # Set the docker tags
   String kneaddataDockerImage = "biobakery/kneaddata:0.10.0"
-  String metaphlanDockerImage = "biobakery/metaphlan:4.0.2"
-  String humannDockerImage = "biobakery/humann:3.6"
+  String metaphlanDockerImage = "diddlydoodles/metaphlan:4.0.6"
+  String humannDockerImage = "diddlydoodles/humann:3.8"
   
   # for the workflows script tasks use the workflows image without the databases (to reduce data download amount)
   String workflowsDockerImage = "biobakery/workflows:3.0.0.a.6_anadama0.7.9_no_metaphlan_db"
@@ -111,6 +112,12 @@ workflow workflowMTX {
 
   Array[Array[String]] PairPaths = pairSet
 
+  # add filepaths for all metaphlan db inputs (2 md5 & 2 tar files)
+  String baseMetaphlanDB = versionSpecificMetaphlanDB
+  String baseMetaphlanMD5 = sub(baseMetaphlanDB, ".tar", ".md5")
+  String metaphlanBowtie = sub(baseMetaphlanDB, ".tar", "_bt2.tar")
+  String metaphlanBowtieMD5 = sub(baseMetaphlanDB, ".tar", "_bt2.md5")
+
   # run tasks for each set of read pairs    
   scatter (ReadPair in PairPaths)
   {
@@ -140,6 +147,10 @@ workflow workflowMTX {
       input:
       sample=ReadPair[2], 
       QCFastqFile=QualityControl.QCFastqFile,
+      chocophlanDB=baseMetaphlanDB,
+      chocophlanDBMD5=baseMetaphlanMD5,
+      chocophlanIndex=metaphlanBowtie,
+      chocophlanIndexMD5=metaphlanBowtieMD5,
       metaphlanDockerImage=metaphlanDockerImage,
       preemptibleAttemptsOverride=preemptibleAttemptsOverride,
       MaxMemGB=MaxMemGB_TaxonomicProfileTasks,
@@ -460,6 +471,10 @@ task TaxonomicProfile {
   input {
     File QCFastqFile
     String sample
+    File chocophlanDB
+    File chocophlanDBMD5
+    File chocophlanIndex
+    File chocophlanIndexMD5
     String metaphlanDockerImage
     Int? MaxMemGB
     Int? MaxDiskGB
@@ -473,7 +488,6 @@ task TaxonomicProfile {
   Int preemptible_attempts = select_first([preemptibleAttemptsOverride, 2])
   
   String tmpdir = "tmp/"
-  String database_files = "/usr/local/lib/python3.6/dist-packages/metaphlan/metaphlan_databases/*"
   String local_db = tmpdir + "metaphlan_databases/"
   String index = "mpa_vOct22_CHOCOPhlAnSGB_202212"
 
@@ -481,10 +495,9 @@ task TaxonomicProfile {
   command {
     mkdir -p ${tmpdir}
     mkdir ${local_db}
-    pip3 install --upgrade metaphlan==4.0.6
-    # mv ${database_files} ${local_db}
+    mv ${chocophlanDB} ${chocophlanDBMD5} ${chocophlanIndex} ${chocophlanIndexMD5} -t ${local_db}
 
-    metaphlan ${QCFastqFile} --input_type fastq --nproc 8 --no_map --tmp_dir ${tmpdir} --index latest \
+    metaphlan ${QCFastqFile} --input_type fastq --nproc 8 --no_map --tmp_dir ${tmpdir} --index ${index} \
     --bowtie2db ${local_db} --output_file ${sample}.tsv --samout ${sample}.sam
   }
     
@@ -737,7 +750,6 @@ task FunctionalProfile {
 
   # download the two reference databases and run humann
   command {
-    pip3 install --upgrade humann==3.8
     mkdir -p ${databases}
     humann_databases --download chocophlan full ${databases} --database-location ${versionSpecificChocophlan}
     humann_databases --download uniref uniref90_diamond ${databases} --database-location ${versionSpecificUniRef90}
@@ -958,6 +970,13 @@ task Collect {
   String geneFamilyFolder = "geneFamilies/"
 
   Array[String] folders = [ecFolder, koFolder, rxnFolder, pathwayFolder, geneFamilyFolder]
+  Int ecFilesize = ceil(size(joinTableEC, 'GB')) 
+  Int koFilesize = ceil(size(joinTableKO, 'GB'))
+  Int largestSize = if (koFilesize > ecFilesize) then koFilesize else ecFilesize
+  Int rxnFilesize = if (ceil(size(joinTableRXN, 'GB')) > largestSize) then ceil(size(joinTableRXN, 'GB')) else largestSize
+  Int pathwaysFilesize = if (ceil(size(joinTablePathways, 'GB')) > rxnFilesize) then ceil(size(joinTablePathways, 'GB')) else rxnFilesize
+  Int geneFilesize = if (ceil(size(joinTableGeneFamilies, 'GB')) > pathwaysFilesize) then ceil(size(joinTableGeneFamilies, 'GB')) else pathwaysFilesize
+  Int memoryNeeded = geneFilesize * 10
 
   command <<<
     for folder in ~{sep=" " folders}; do mkdir -p $folder; done
@@ -999,7 +1018,7 @@ task Collect {
   runtime {
     docker: dockerImage
     cpu: 4
-    memory: "16" + " GB"
+    memory: memoryNeeded + " GB"
     preemptible: 2
     disks: "local-disk 50 SSD"
   }
