@@ -991,7 +991,7 @@ task Collect {
         resultName = "summarized_" + fileName
         resultFile = destFolder + resultName
         currentTable = pd.read_csv(file, sep = '\t')
-        currentTable.columns = currentTable.columns.str.split("_", 1).str.get(0)
+        currentTable.columns = currentTable.columns.str.split("_", n = 1).str.get(0)
         currentTable.to_csv(file, sep = '\t', index=False)
         leftMostColumn = list(currentTable.columns)[0]
         currentTable.drop(currentTable[currentTable[leftMostColumn].str.contains('\|')].index, inplace=True)
