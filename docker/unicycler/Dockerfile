@@ -7,9 +7,9 @@ RUN apt-get update && \
     racon 
 
 RUN wget http://cab.spbu.ru/files/release3.15.5/SPAdes-3.15.5-Linux.tar.gz; \
-    tar -xzf SPAdes-3.15.5-Linux.tar.gz; cd SPAdes-3.15.5-Linux/ && ./spades_compile.sh; 
+    tar -xzf SPAdes-3.15.5-Linux.tar.gz; 
 
-ENV PATH="${PATH}:/SPAdes-3.15.5-Linux/bin"
+ENV PATH="${PATH}:/SPAdes-3.15.5-Linux/bin/"
 
 RUN git clone https://github.com/rrwick/Unicycler.git; \
     cd Unicycler; \
