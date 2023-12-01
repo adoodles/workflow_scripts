@@ -7,7 +7,7 @@ RUN apt-get update && \
     racon 
 
 RUN wget http://cab.spbu.ru/files/release3.15.5/SPAdes-3.15.5-Linux.tar.gz; \
-    tar -xzf SPAdes-3.15.5-Linux.tar.gz; cd SPAdes-3.15.5-Linux/bin/; \
+    tar -xzf SPAdes-3.15.5-Linux.tar.gz; cd SPAdes-3.15.5-Linux/; \
     PREFIX=/usr/local ./spades_compile.sh; 
 
 ENV PATH="${PATH}:/usr/local/bin"
