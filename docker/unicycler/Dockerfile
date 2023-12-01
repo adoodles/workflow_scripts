@@ -10,6 +10,6 @@ RUN apt-get install -y spades
 
 RUN git clone https://github.com/rrwick/Unicycler.git; \
     cd Unicycler; \
-    python3 setup.py install; cd / \
+    python3 setup.py install; cd / 
 
 WORKDIR /tmp
