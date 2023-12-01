@@ -6,7 +6,11 @@ RUN apt-get update && \
     openjdk-8-jre wget zip ncbi-blast+ git-all zlib1g-dev libffi-dev libbz2-dev liblzma-dev libjpeg-dev \
     racon 
 
-RUN apt-get install -y spades
+RUN wget http://cab.spbu.ru/files/release3.15.5/SPAdes-3.15.5-Linux.tar.gz; \
+    tar -xzf SPAdes-3.15.5-Linux.tar.gz; cd SPAdes-3.15.5-Linux/bin/; \
+    PREFIX=/usr/local ./spades_compile.sh; 
+
+ENV PATH="${PATH}:/usr/local/bin"
 
 RUN git clone https://github.com/rrwick/Unicycler.git; \
     cd Unicycler; \

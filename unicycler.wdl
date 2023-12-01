@@ -9,7 +9,7 @@ workflow workflowUnicycler {
     String projectName
 	}
   # Set the docker tags
-  String unicyclerDockerImage = "biobakery/kneaddata:0.10.0"
+  String unicyclerDockerImage = "diddlydoodles/unicycler:latest"
 
   Array[Array[String]] inputRead1 = read_tsv(inputRead1Files)
   
