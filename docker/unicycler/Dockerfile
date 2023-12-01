@@ -4,7 +4,7 @@ RUN apt-get update && \
     DEBIAN_FRONTEND="noninteractive" apt-get install -y python python-dev \
     python3 python3-dev python3-pip build-essential cmake \
     openjdk-8-jre wget zip ncbi-blast+ git-all zlib1g-dev libffi-dev libbz2-dev liblzma-dev libjpeg-dev \
-    racon \
+    racon 
 
 RUN apt-get install -y spades
 
